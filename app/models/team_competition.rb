@@ -1,0 +1,2 @@
+class TeamCompetition < ApplicationRecord
+end
