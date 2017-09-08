@@ -37,30 +37,26 @@ class Api::V1::FootballDataFetcherController < ApplicationController
   end
 
   def predictions
-    result = self.class.get("/competitions/#{params['id']}/fixtures")
-    fixtures = JSON.parse(result.body)['fixtures']
-    predictions = predictions_method(fixtures)
-
+    predictions = Fixture.select{|fixture| fixture.competition_id == params[:id].to_i}.map do |fixture|
+      if fixture.status == "FINISHED"
+        fixture
+      else
+        fixture = predict_fixture(fixture)
+        {fixture:fixture, predictions: fixture.predictions}
+      end
+    end
     render json: predictions
   end
 
-  def predictions_method(fixtures)
-    build_teams(fixtures)
-    fixtures.map do |fixture|
-      if fixture['status'] == "FINISHED"
-        fixture
-      else
-        predict_fixture(fixture)
-      end
-    end
-  end
-
   def predict_fixture(fixture)
-    home_outcomes = build_outcomes(fixture["homeTeamId"])
-    away_outcomes = build_outcomes(fixture["awayTeamId"])
-    fixture["result"]["goalsHomeTeam"] = most_likely_outcome(home_outcomes)
-    fixture["result"]["goalsAwayTeam"] = most_likely_outcome(away_outcomes)
-    fixture["predictions"] = {homeGoals: home_outcomes, awayGoals: away_outcomes}
+    home_outcomes = fixture.home_team.build_outcomes(fixture)
+    away_outcomes = fixture.away_team.build_outcomes(fixture)
+    fixture.goals_home = most_likely_outcome(home_outcomes)
+    fixture.goals_away = most_likely_outcome(away_outcomes)
+    fixture.predictions = {homeGoals: home_outcomes, awayGoals: away_outcomes}
+    if away_outcomes[0] == 1
+      byebug
+    end
     fixture
   end
 
@@ -105,13 +101,8 @@ class Api::V1::FootballDataFetcherController < ApplicationController
     end
   end
 
-  def build_outcomes(teamId)
-    team = Team.findOrCreate(teamId)
-    (0..5).map{ |i| team.probability_of(i)}
-  end
-
   def most_likely_outcome(outcomes)
-    outcomes.sort.last
+    outcomes.index(outcomes.sort.last)
   end
 
 end
