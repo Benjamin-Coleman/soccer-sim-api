@@ -42,6 +42,7 @@ class Api::V1::FootballDataFetcherController < ApplicationController
         fixture
       else
         fixture = predict_fixture(fixture)
+        fixture.save
         {fixture:fixture, predictions: fixture.predictions}
       end
     end
@@ -54,9 +55,6 @@ class Api::V1::FootballDataFetcherController < ApplicationController
     fixture.goals_home = most_likely_outcome(home_outcomes)
     fixture.goals_away = most_likely_outcome(away_outcomes)
     fixture.predictions = {homeGoals: home_outcomes, awayGoals: away_outcomes}
-    if away_outcomes[0] == 1
-      byebug
-    end
     fixture
   end
 
