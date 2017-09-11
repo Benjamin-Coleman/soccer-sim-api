@@ -42,7 +42,7 @@ class Api::V1::FootballDataFetcherController < ApplicationController
         fixture
       else
         fixture = predict_fixture(fixture)
-        fixture
+        fixture.save
         # {fixture:fixture, predictions: fixture.predictions}
       end
     end
@@ -64,9 +64,49 @@ class Api::V1::FootballDataFetcherController < ApplicationController
     render json: competition_predictions
   end
 
-   def fetch_fixtures_by_competition()
-    competition_fixtures = Fixture.select{|f| f.competition_id == params[:id].to_i}
-    render json: competition_fixtures
+  def fetch_fixtures_by_competition()
+    id = params[:id].to_i
+    # .select{|f| f.competition_id == id}
+
+    competition_fixtures = Fixture.where("competition_id = #{id}").order('match_day, match_date')
+    match_days = []
+    matches = []
+    last_match = -1
+    competition_fixtures.map do |fixture|
+      if last_match != fixture.match_day
+        last_match = fixture.match_day
+        if matches.count != 0 
+          match_days.push(matches)
+          matches = []
+        end
+      end
+      matches.push(fixture)
+    end
+     if matches.count != 0 
+        match_days.push(matches)
+    end
+    render json: match_days
+  end
+
+  def fetch_fixture()
+    fixture = Fixture.find(params[:id].to_i)
+    
+  if fixture.predictions.count > 0 
+    predictions = [] 
+    (0..5).each do |home_goal|
+      (0..5).each do |away_goal|
+        probability = fixture.predictions.first["home_goals_#{home_goal}"] * fixture.predictions.first["away_goals_#{away_goal}"]
+        prediction = {home_goals: home_goal, away_goals: away_goal, probability: probability}
+        predictions.push(prediction)
+      end
+    end
+    # predictions.sort_by!{|prediction| prediction["probability"]}
+    predictions = predictions.sort {|a, b| a[:probability] <=> b[:probability]}
+    predictions = predictions.reverse.first(6)
+  else 
+    predictions = []
+  end
+    render json: {data: fixture, predictions: predictions, home_team: fixture.home_team, away_team: fixture.away_team, full_predictions: fixture.predictions.first }
   end
 
   # def build_teams(fixtures)
@@ -107,7 +147,9 @@ class Api::V1::FootballDataFetcherController < ApplicationController
         goals_home = fixture["result"]["goalsHomeTeam"]
         goals_away = fixture["result"]["goalsAwayTeam"]
         status = fixture["status"]
-        new_fixture = Fixture.create(home_team_id: home_id, away_team_id: away_id, goals_home: goals_home, goals_away: goals_away, status: status, competition_id: comp.id)
+        match_date = fixture["date"]
+        match_day = fixture["matchday"]
+        new_fixture = Fixture.create(home_team_id: home_id, away_team_id: away_id, goals_home: goals_home, goals_away: goals_away, status: status, competition_id: comp.id, match_date: match_date, match_day: match_day)
       end
     end
   end
@@ -121,9 +163,18 @@ class Api::V1::FootballDataFetcherController < ApplicationController
     render json: team_data
   end
 
+  def get_all_teams
+    render json: Team.all
+  end
+
   def competition_data_from_db
     competition_data = Competition.find(params[:id])
     render json: competition_data
+  end
+
+  def competitions_data_from_db
+    allCompetitions = Competition.all
+    render json: allCompetitions
   end
 
 end
