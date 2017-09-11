@@ -42,8 +42,8 @@ class Api::V1::FootballDataFetcherController < ApplicationController
         fixture
       else
         fixture = predict_fixture(fixture)
-        fixture.save
-        {fixture:fixture, predictions: fixture.predictions}
+        fixture
+        # {fixture:fixture, predictions: fixture.predictions}
       end
     end
     render json: predictions
@@ -54,8 +54,19 @@ class Api::V1::FootballDataFetcherController < ApplicationController
     away_outcomes = fixture.away_team.build_outcomes(fixture)
     fixture.goals_home = most_likely_outcome(home_outcomes)
     fixture.goals_away = most_likely_outcome(away_outcomes)
-    fixture.predictions = {homeGoals: home_outcomes, awayGoals: away_outcomes}
+    # fixture.predictions = {homeGoals: home_outcomes, awayGoals: away_outcomes}
+    Prediction.create(fixture_id: fixture.id, home_goals_0: home_outcomes[0], home_goals_1: home_outcomes[1], home_goals_2: home_outcomes[2], home_goals_3: home_outcomes[3], home_goals_4: home_outcomes[4], home_goals_5: home_outcomes[5], away_goals_0: away_outcomes[0], away_goals_1: away_outcomes[1], away_goals_2: away_outcomes[2], away_goals_3: away_outcomes[3], away_goals_4: away_outcomes[4], away_goals_5: away_outcomes[5])
     fixture
+  end
+
+  def fetch_predictions_by_competition()
+    competition_predictions = Prediction.select{|p| p.fixture.competition_id == params[:id].to_i}
+    render json: competition_predictions
+  end
+
+   def fetch_fixtures_by_competition()
+    competition_fixtures = Fixture.select{|f| f.competition_id == params[:id].to_i}
+    render json: competition_fixtures
   end
 
   # def build_teams(fixtures)
@@ -80,6 +91,8 @@ class Api::V1::FootballDataFetcherController < ApplicationController
       teams(comp.id).each do |team|
         new_team = Team.find_or_create_by(id: team["_links"]["self"]["href"].split('/').last)
         new_team.name = team["name"]
+        new_team.crest_url = team["crestUrl"]
+        new_team.short_name = team["shortName"]
         new_team.save
         TeamCompetition.create(team_id: new_team.id, competition_id: comp.id)
       end
@@ -101,6 +114,16 @@ class Api::V1::FootballDataFetcherController < ApplicationController
 
   def most_likely_outcome(outcomes)
     outcomes.index(outcomes.sort.last)
+  end
+
+  def team_data_from_db
+    team_data = Team.find(params[:id])
+    render json: team_data
+  end
+
+  def competition_data_from_db
+    competition_data = Competition.find(params[:id])
+    render json: competition_data
   end
 
 end
