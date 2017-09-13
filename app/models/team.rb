@@ -3,9 +3,11 @@ require 'poisson'
 class Team < ApplicationRecord
 	has_many :home_games, foreign_key: "home_team_id", class_name: "Fixture"
 	has_many :away_games, foreign_key: "away_team_id", class_name: "Fixture"
+  has_many :team_competitions
+  has_many :competitions, through: :team_competitions
 
-	def build_outcomes(fixture)
-		fixture_competition = fixture.competition
+	def build_outcomes(fixture, competition)
+		fixture_competition = competition
 		completed_home_games = home_games.select{|game| fixture_competition == game.competition && game.status == "FINISHED"}
 		completed_away_games = away_games.select{|game| fixture_competition == game.competition && game.status == "FINISHED"}
 

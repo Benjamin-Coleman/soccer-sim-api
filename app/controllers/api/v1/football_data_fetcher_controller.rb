@@ -27,36 +27,51 @@ class Api::V1::FootballDataFetcherController < ApplicationController
   def teams(id)
     result = self.class.get("/competitions/#{id}/teams", @options)
     teams = JSON.parse(result.body)["teams"]
+    if teams.nil?
+      return []
+    end
     teams
   end
 
   def fixtures(id)
     result = self.class.get("/competitions/#{id}/fixtures", @options)
     fixtures = JSON.parse(result.body)["fixtures"]
+    if fixtures.nil?
+      return []
+    end
     fixtures
   end
 
-  def predictions
-    predictions = Fixture.select{|fixture| fixture.competition_id == params[:id].to_i}.map do |fixture|
+  def predictions(competition)
+    # competition = Competition.find(competitionId)
+    predictions = Fixture.select{|fixture| fixture.competition_id == competition.id}.map do |fixture|
       if fixture.status == "FINISHED"
-        fixture
+        fixture = predict_fixture(fixture, competition)
       else
-        fixture = predict_fixture(fixture)
-        fixture.save
+        # fixture = predict_fixture(fixture, competition)
+
         # {fixture:fixture, predictions: fixture.predictions}
       end
     end
-    render json: predictions
+    # render json: predictions
   end
 
-  def predict_fixture(fixture)
-    home_outcomes = fixture.home_team.build_outcomes(fixture)
-    away_outcomes = fixture.away_team.build_outcomes(fixture)
-    fixture.goals_home = most_likely_outcome(home_outcomes)
-    fixture.goals_away = most_likely_outcome(away_outcomes)
+  def predict_fixture(fixture, competition)
+    # breaks here if fixture doesn't have associated team
+    if fixture.home_team.nil? || fixture.away_team.nil?
+      fixture.goals_home = 0
+      fixture.goals_away = 0
+      return fixture
+    end
+    home_outcomes = fixture.home_team.build_outcomes(fixture, competition)
+    away_outcomes = fixture.away_team.build_outcomes(fixture, competition)
+    if fixture.status != "FINISHED"
+      fixture.goals_home = most_likely_outcome(home_outcomes)
+      fixture.goals_away = most_likely_outcome(away_outcomes)
+    end
     # fixture.predictions = {homeGoals: home_outcomes, awayGoals: away_outcomes}
     Prediction.create(fixture_id: fixture.id, home_goals_0: home_outcomes[0], home_goals_1: home_outcomes[1], home_goals_2: home_outcomes[2], home_goals_3: home_outcomes[3], home_goals_4: home_outcomes[4], home_goals_5: home_outcomes[5], away_goals_0: away_outcomes[0], away_goals_1: away_outcomes[1], away_goals_2: away_outcomes[2], away_goals_3: away_outcomes[3], away_goals_4: away_outcomes[4], away_goals_5: away_outcomes[5])
-    fixture
+    fixture.save
   end
 
   def fetch_predictions_by_competition()
@@ -64,8 +79,8 @@ class Api::V1::FootballDataFetcherController < ApplicationController
     render json: competition_predictions
   end
 
-  def fetch_fixtures_by_competition()
-    id = params[:id].to_i
+  def fetch_fixtures_by_competition(id)
+    
     # .select{|f| f.competition_id == id}
 
     competition_fixtures = Fixture.where("competition_id = #{id}").order('match_day, match_date')
@@ -73,6 +88,10 @@ class Api::V1::FootballDataFetcherController < ApplicationController
     matches = []
     last_match = -1
     competition_fixtures.map do |fixture|
+      # fixture.send("home_crest_url=", fixture.home_team.crest_url)
+      # fixture['away_crest_url'] = fixture.away_team.crest_url
+      # fixture.home_crest_url = fixture.home_team.crest_url
+      # fixture.away_crest_url = fixture.away_team.crest_url
       if last_match != fixture.match_day
         last_match = fixture.match_day
         if matches.count != 0 
@@ -80,12 +99,17 @@ class Api::V1::FootballDataFetcherController < ApplicationController
           matches = []
         end
       end
-      matches.push(fixture)
+      matches.push({data: fixture, home_team: fixture.home_team, away_team: fixture.away_team})
     end
      if matches.count != 0 
         match_days.push(matches)
     end
-    render json: match_days
+    match_days
+  end
+
+  def get_fixtures_by_competition
+    id = params[:id].to_i
+    render json: fetch_fixtures_by_competition(id)
   end
 
   def fetch_fixture()
@@ -109,6 +133,22 @@ class Api::V1::FootballDataFetcherController < ApplicationController
     render json: {data: fixture, predictions: predictions, home_team: fixture.home_team, away_team: fixture.away_team, full_predictions: fixture.predictions.first }
   end
 
+  def get_fixtures_by_team
+    team_id = params[:id]
+    team_fixtures = Fixture.where("home_team_id = #{team_id} or away_team_id = #{team_id}").order('competition_id, match_day, match_date')
+    fixtures = team_fixtures.map do |fixture|
+      fixture = {data: fixture, home_team: fixture.home_team, away_team: fixture.away_team, competition: fixture.competition}
+    end
+    render json: fixtures
+  end
+
+  def get_teams_by_competition
+    all_teams_by_competition = Competition.all.map do |comp|
+      {competition: comp, teams: comp.teams}
+    end
+    render json: all_teams_by_competition
+  end
+
   # def build_teams(fixtures)
   #   fixtures.each do |fixture|
   #     if fixture['status'] == "FINISHED"
@@ -127,8 +167,10 @@ class Api::V1::FootballDataFetcherController < ApplicationController
   end
 
   def build_teams
+    TeamCompetition.destroy_all
     Competition.all.each do |comp|
-      teams(comp.id).each do |team|
+      teams_list = teams(comp.id)
+      teams_list.each do |team|
         new_team = Team.find_or_create_by(id: team["_links"]["self"]["href"].split('/').last)
         new_team.name = team["name"]
         new_team.crest_url = team["crestUrl"]
@@ -175,6 +217,10 @@ class Api::V1::FootballDataFetcherController < ApplicationController
   def competitions_data_from_db
     allCompetitions = Competition.all
     render json: allCompetitions
+  end
+
+  def build_predictions
+    Competition.all.each{|comp| predictions(comp)}
   end
 
 end

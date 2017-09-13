@@ -1,5 +1,7 @@
 class Competition < ApplicationRecord
 	has_many :fixtures
+	has_many :team_competitions
+	has_many :teams, through: :team_competitions
 
 	def home_goal_average
 		played_games = self.fixtures.select{ |fixture| fixture.status == "FINISHED" }
